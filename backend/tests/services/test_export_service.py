@@ -11,7 +11,7 @@ from beanie import PydanticObjectId
 from app.config import settings
 from app.models import Blob, BlobState, JobRunTiming, RunKind, SourceInfo, SourceMode
 from app.models.timing import RunMachine
-from app.services import export_service, run_service
+from app.services import export_service, object_service, run_service
 from app.storage.paths import blob_path
 from tests.services.helpers import TEST_OWNER, make_blob, make_object, make_project
 
@@ -32,14 +32,24 @@ def test_export_format_constants():
     assert export_service.DEFAULT_BLOB_THRESHOLD_BYTES == 100 * 1024 * 1024
 
 
+def test_report_artifact_roots_cover_every_object_report_root():
+    categories = [category for category, _ in export_service.REPORT_ARTIFACT_ROOTS]
+    mapped_roots = {
+        getattr(settings, settings_attr)
+        for _, settings_attr in export_service.REPORT_ARTIFACT_ROOTS
+    }
+
+    assert len(categories) == len(set(categories))
+    assert len(mapped_roots) == len(export_service.REPORT_ARTIFACT_ROOTS)
+    assert mapped_roots == set(object_service._REPORT_ROOTS)
+
+
 @pytest.fixture
 def report_roots(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(settings, "bioinfo_home", tmp_path)
     return {
-        "qc_reports_dir": settings.qc_reports_dir,
-        "bam_stats_dir": settings.bam_stats_dir,
-        "vcf_stats_dir": settings.vcf_stats_dir,
-        "annotation_stats_dir": settings.annotation_stats_dir,
+        settings_attr: getattr(settings, settings_attr)
+        for _, settings_attr in export_service.REPORT_ARTIFACT_ROOTS
     }
 
 
@@ -175,26 +185,27 @@ class TestCollectReportArtifacts:
             ("bam_stats", "contigs.tsv"): b"contigs\nchr1\t10\n",
             ("vcf_stats", "variants.tsv"): b"variants\n1\n",
             ("annotation_stats", "features.db"): b"sqlite-bytes",
+            ("sv_stats", "structural-variants.tsv"): b"sv-stats",
+            ("feature_coverage", "feature-coverage.tsv"): b"feature-coverage",
+            ("variants_in_regions", "variants-in-regions.tsv"): b"region-variants",
+            ("annotation_comparison", "comparison.tsv"): b"annotation-comparison",
+            ("coverage", "coverage.tsv"): b"coverage",
+            ("gc_bias", "gc-bias.tsv"): b"gc-bias",
+            ("methylation", "methylation.tsv"): b"methylation",
+        }
+        roots_by_category = {
+            category: report_roots[settings_attr]
+            for category, settings_attr in export_service.REPORT_ARTIFACT_ROOTS
         }
 
         for (category, rel_path), payload in payloads.items():
-            root = {
-                "qc": report_roots["qc_reports_dir"],
-                "bam_stats": report_roots["bam_stats_dir"],
-                "vcf_stats": report_roots["vcf_stats_dir"],
-                "annotation_stats": report_roots["annotation_stats_dir"],
-            }[category]
-            self._write(root / object_id / rel_path, payload)
+            self._write(roots_by_category[category] / object_id / rel_path, payload)
 
         artifacts = export_service.collect_report_artifacts([obj])
 
-        assert [(a.category, a.object_id, a.source_path) for a in artifacts] == [
-            ("annotation_stats", object_id, "features.db"),
-            ("bam_stats", object_id, "contigs.tsv"),
-            ("qc", object_id, "fastp.html"),
-            ("qc", object_id, "nested/qc-summary.txt"),
-            ("vcf_stats", object_id, "variants.tsv"),
-        ]
+        assert [(a.category, a.object_id, a.source_path) for a in artifacts] == sorted(
+            (category, object_id, rel_path) for category, rel_path in payloads
+        )
         for artifact in artifacts:
             payload = payloads[(artifact.category, artifact.source_path)]
             self._assert_artifact(
