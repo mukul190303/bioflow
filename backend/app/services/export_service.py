@@ -47,11 +47,22 @@ BIOFLOW_EXPORT_VERSION = 2
 DEFAULT_BLOB_THRESHOLD_BYTES = 100 * 1024 * 1024
 
 
+# Each per-object report root needs a stable archive category. The companion
+# exhaustiveness test compares these settings attributes with
+# object_service._REPORT_ROOTS so a newly added report type cannot silently
+# disappear from project exports.
 REPORT_ARTIFACT_ROOTS: tuple[tuple[str, str], ...] = (
     ("qc", "qc_reports_dir"),
     ("bam_stats", "bam_stats_dir"),
     ("vcf_stats", "vcf_stats_dir"),
     ("annotation_stats", "annotation_stats_dir"),
+    ("sv_stats", "sv_stats_dir"),
+    ("feature_coverage", "feature_coverage_dir"),
+    ("variants_in_regions", "variants_in_regions_dir"),
+    ("annotation_comparison", "annotation_comparison_dir"),
+    ("coverage", "coverage_dir"),
+    ("gc_bias", "gc_bias_dir"),
+    ("methylation", "methylation_dir"),
 )
 
 
